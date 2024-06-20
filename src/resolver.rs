@@ -279,7 +279,11 @@ impl<'a> Resolver<'a> {
             AstNode::Loop { block } => {
                 self.resolve_node(block);
             }
-            AstNode::Call { head: _, ref args } => {
+            AstNode::Call {
+                head: _,
+                ref args,
+                is_extern: _,
+            } => {
                 for arg in args {
                     self.resolve_node(*arg);
                 }

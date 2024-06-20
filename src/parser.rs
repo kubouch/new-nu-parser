@@ -125,6 +125,7 @@ pub enum AstNode {
         name: NodeId,
         ty: Option<NodeId>,
     },
+    UnresolvedArg,
     Closure {
         params: Option<NodeId>,
         block: NodeId,
@@ -134,6 +135,7 @@ pub enum AstNode {
     Call {
         head: NodeId,
         args: Vec<NodeId>,
+        is_extern: bool,
     },
     NamedValue {
         name: NodeId,
@@ -1164,6 +1166,8 @@ impl Parser {
                 code_body.push(self.continue_statement());
             } else if self.is_keyword(b"break") {
                 code_body.push(self.break_statement());
+            } else if self.is_name() || self.is_caret() {
+                code_body.push(self.call());
             } else {
                 let exp_span_start = self.position();
                 let expression = self.expression_or_assignment();
@@ -1267,6 +1271,52 @@ impl Parser {
         let span_end = span_start + b"break".len();
 
         self.create_node(AstNode::Break, span_start, span_end)
+    }
+
+    pub fn call(&mut self) -> NodeId {
+        let span_start = self.position();
+
+        let is_extern = if self.is_caret() {
+            self.next();
+            true
+        } else {
+            false
+        };
+
+        let head = self.name();
+        let mut args = vec![];
+        let mut subargs: Vec<Option<Token>> = vec![self.next()];
+
+        while self.has_tokens() {
+            if self.is_horizontal_space() {
+                if let (Some(Some(first)), Some(Some(last))) = (subargs.first(), subargs.last()) {
+                    let node_id =
+                        self.create_node(AstNode::UnresolvedArg, first.span_start, last.span_end);
+                    args.push(node_id);
+                    subargs.clear();
+                }
+                self.skip_space();
+            } else {
+                subargs.push(self.next());
+            }
+        }
+
+        if let (Some(Some(first)), Some(Some(last))) = (subargs.first(), subargs.last()) {
+            let node_id = self.create_node(AstNode::UnresolvedArg, first.span_start, last.span_end);
+            args.push(node_id);
+        }
+
+        let span_end = self.position();
+
+        self.create_node(
+            AstNode::Call {
+                head,
+                args,
+                is_extern,
+            },
+            span_start,
+            span_end,
+        )
     }
 
     pub fn is_operator(&mut self) -> bool {
@@ -1412,6 +1462,16 @@ impl Parser {
             self.peek(),
             Some(Token {
                 token_type: TokenType::QuestionMark,
+                ..
+            })
+        )
+    }
+
+    pub fn is_caret(&mut self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Token {
+                token_type: TokenType::Caret,
                 ..
             })
         )
@@ -1822,6 +1882,7 @@ impl Parser {
             }
         }
     }
+
     pub fn comma(&mut self) {
         match self.peek() {
             Some(Token {
@@ -2376,6 +2437,11 @@ impl Parser {
                 span_start,
                 span_end: span_start + 1,
             },
+            b'^' => Token {
+                token_type: TokenType::Caret,
+                span_start,
+                span_end: span_start + 1,
+            },
             x => {
                 panic!(
                     "Internal compiler error: symbol character mismatched in lexer: {}",
@@ -2436,9 +2502,10 @@ impl Parser {
 
 fn is_symbol(source: &[u8]) -> bool {
     let first_byte = source[0];
+
     if [
         b'+', b'-', b'*', b'/', b'.', b',', b'(', b'[', b'{', b'<', b')', b']', b'}', b'>', b':',
-        b';', b'=', b'$', b'|', b'!', b'~', b'&', b'\'', b'"', b'?',
+        b';', b'=', b'$', b'|', b'!', b'~', b'&', b'\'', b'"', b'?', b'^',
     ]
     .contains(&first_byte)
     {

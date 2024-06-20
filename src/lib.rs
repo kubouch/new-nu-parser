@@ -6,3 +6,5 @@ pub mod resolver;
 #[cfg(test)]
 mod test;
 pub mod typechecker;
+
+pub mod token;
