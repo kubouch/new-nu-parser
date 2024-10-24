@@ -372,26 +372,28 @@ impl Parser {
         let _span = span!();
         let span_start = self.position();
 
-        let mut expr = if self.is_lcurly() {
+        self.peek_bareword2(bareword_context.strictness);
+
+        let mut expr = if self.is_lcurly2() {
             self.record_or_closure()
-        } else if self.is_lparen() {
+        } else if self.is_lparen2() {
             self.lparen();
             let output = self.expression();
             self.rparen();
             output
-        } else if self.is_lsquare() {
+        } else if self.is_lsquare2() {
             self.list_or_table()
-        } else if self.is_keyword(b"true") || self.is_keyword(b"false") {
+        } else if self.is_keyword2(b"true") || self.is_keyword2(b"false") {
             self.boolean()
-        } else if self.is_keyword(b"null") {
+        } else if self.is_keyword2(b"null") {
             self.null()
-        } else if self.is_string() {
+        } else if self.is_string2() {
             self.string()
-        } else if self.is_number() {
+        } else if self.is_number2() {
             self.number()
-        } else if self.is_dollar() {
+        } else if self.is_dollar2() {
             self.variable()
-        } else if self.is_bareword(bareword_context.strictness) {
+        } else if self.is_bareword2(bareword_context.strictness) {
             if bareword_context.as_string {
                 let node_id = self.bareword(bareword_context.strictness);
                 self.compiler.ast_nodes[node_id.0] = AstNode::String;
@@ -894,6 +896,10 @@ impl Parser {
         self.peek().is_some()
     }
 
+    pub fn has_tokens2(&mut self) -> bool {
+        self.next_token.is_some()
+    }
+
     pub fn match_expression(&mut self) -> NodeId {
         let _span = span!();
         let span_start = self.position();
@@ -1261,32 +1267,34 @@ impl Parser {
         }
 
         while self.has_tokens() {
-            if self.is_rcurly() && context == BlockContext::Curlies {
+            self.peek2();
+
+            if self.is_rcurly2() && context == BlockContext::Curlies {
                 self.rcurly();
                 break;
-            } else if self.is_rcurly() && context == BlockContext::Closure {
+            } else if self.is_rcurly2() && context == BlockContext::Closure {
                 // not responsible for parsing it, yield back to the closure pass
                 break;
-            } else if self.is_semicolon() || self.is_newline() {
+            } else if self.is_semicolon2() || self.is_newline() {
                 self.next();
                 continue;
-            } else if self.is_keyword(b"def") {
+            } else if self.is_keyword2(b"def") {
                 code_body.push(self.def_statement());
-            } else if self.is_keyword(b"let") {
+            } else if self.is_keyword2(b"let") {
                 code_body.push(self.let_statement());
-            } else if self.is_keyword(b"mut") {
+            } else if self.is_keyword2(b"mut") {
                 code_body.push(self.mut_statement());
-            } else if self.is_keyword(b"while") {
+            } else if self.is_keyword2(b"while") {
                 code_body.push(self.while_statement());
-            } else if self.is_keyword(b"for") {
+            } else if self.is_keyword2(b"for") {
                 code_body.push(self.for_statement());
-            } else if self.is_keyword(b"loop") {
+            } else if self.is_keyword2(b"loop") {
                 code_body.push(self.loop_statement());
-            } else if self.is_keyword(b"return") {
+            } else if self.is_keyword2(b"return") {
                 code_body.push(self.return_statement());
-            } else if self.is_keyword(b"continue") {
+            } else if self.is_keyword2(b"continue") {
                 code_body.push(self.continue_statement());
-            } else if self.is_keyword(b"break") {
+            } else if self.is_keyword2(b"break") {
                 code_body.push(self.break_statement());
             } else {
                 let exp_span_start = self.position();
@@ -1455,6 +1463,16 @@ impl Parser {
         )
     }
 
+    pub fn is_lcurly2(&self) -> bool {
+        matches!(
+            self.next_token,
+            Some(Token {
+                token_type: TokenType::LCurly,
+                ..
+            })
+        )
+    }
+
     pub fn is_rcurly(&mut self) -> bool {
         matches!(
             self.peek(),
@@ -1465,9 +1483,29 @@ impl Parser {
         )
     }
 
+    pub fn is_rcurly2(&self) -> bool {
+        matches!(
+            self.next_token,
+            Some(Token {
+                token_type: TokenType::RCurly,
+                ..
+            })
+        )
+    }
+
     pub fn is_lparen(&mut self) -> bool {
         matches!(
             self.peek(),
+            Some(Token {
+                token_type: TokenType::LParen,
+                ..
+            })
+        )
+    }
+
+    pub fn is_lparen2(&self) -> bool {
+        matches!(
+            self.next_token,
             Some(Token {
                 token_type: TokenType::LParen,
                 ..
@@ -1488,6 +1526,16 @@ impl Parser {
     pub fn is_lsquare(&mut self) -> bool {
         matches!(
             self.peek(),
+            Some(Token {
+                token_type: TokenType::LSquare,
+                ..
+            })
+        )
+    }
+
+    pub fn is_lsquare2(&self) -> bool {
+        matches!(
+            self.next_token,
             Some(Token {
                 token_type: TokenType::LSquare,
                 ..
@@ -1538,6 +1586,16 @@ impl Parser {
     pub fn is_dollar(&mut self) -> bool {
         matches!(
             self.peek(),
+            Some(Token {
+                token_type: TokenType::Dollar,
+                ..
+            })
+        )
+    }
+
+    pub fn is_dollar2(&mut self) -> bool {
+        matches!(
+            self.next_token,
             Some(Token {
                 token_type: TokenType::Dollar,
                 ..
@@ -1635,6 +1693,16 @@ impl Parser {
         )
     }
 
+    pub fn is_semicolon2(&self) -> bool {
+        matches!(
+            self.next_token,
+            Some(Token {
+                token_type: TokenType::Semicolon,
+                ..
+            })
+        )
+    }
+
     pub fn is_dot(&mut self) -> bool {
         matches!(
             self.peek(),
@@ -1675,6 +1743,16 @@ impl Parser {
         )
     }
 
+    pub fn is_number2(&self) -> bool {
+        matches!(
+            self.next_token,
+            Some(Token {
+                token_type: TokenType::Number,
+                ..
+            })
+        )
+    }
+
     pub fn is_string(&mut self) -> bool {
         matches!(
             self.peek(),
@@ -1685,9 +1763,32 @@ impl Parser {
         )
     }
 
+    pub fn is_string2(&self) -> bool {
+        matches!(
+            self.next_token,
+            Some(Token {
+                token_type: TokenType::String,
+                ..
+            })
+        )
+    }
+
     pub fn is_keyword(&mut self, keyword: &[u8]) -> bool {
+        let _span = span!();
         matches!(
             self.peek(),
+            Some(Token {
+                token_type: TokenType::Name,
+                span_start,
+                span_end,
+            }) if &self.compiler.source[span_start..span_end] == keyword
+        )
+    }
+
+    pub fn is_keyword2(&self, keyword: &[u8]) -> bool {
+        let _span = span!();
+        matches!(
+            self.next_token,
             Some(Token {
                 token_type: TokenType::Name,
                 span_start,
@@ -1709,6 +1810,16 @@ impl Parser {
     pub fn is_bareword(&mut self, name_strictness: NameStrictness) -> bool {
         matches!(
             self.peek_bareword(name_strictness),
+            Some(Token {
+                token_type: TokenType::Name,
+                ..
+            })
+        )
+    }
+
+    pub fn is_bareword2(&mut self, name_strictness: NameStrictness) -> bool {
+        matches!(
+            self.next_token,
             Some(Token {
                 token_type: TokenType::Name,
                 ..
@@ -2574,6 +2685,7 @@ impl Parser {
 
     pub fn peek_bareword(&mut self, name_strictness: NameStrictness) -> Option<Token> {
         let _span = span!();
+
         if self.next_token.is_none() {
             let prev_offset = self.span_offset;
             self.next_token = self.next_bareword(name_strictness);
@@ -2582,6 +2694,21 @@ impl Parser {
         }
 
         self.next_token
+    }
+
+    pub fn peek2(&mut self) {
+        self.peek_bareword2(NameStrictness::Strict)
+    }
+
+    pub fn peek_bareword2(&mut self, name_strictness: NameStrictness) {
+        let _span = span!();
+
+        if self.next_token.is_none() {
+            let prev_offset = self.span_offset;
+            self.next_token = self.next_bareword(name_strictness);
+            self.next_offset = self.span_offset;
+            self.span_offset = prev_offset;
+        }
     }
 
     #[allow(clippy::should_implement_trait)]
