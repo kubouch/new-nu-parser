@@ -374,6 +374,45 @@ impl Parser {
 
         self.peek_bareword2(bareword_context.strictness);
 
+        // let mut expr = if let Some(token) = self.next_token {
+        //     match token.token_type {
+        //         TokenType::LCurly => self.record_or_closure(),
+        //         TokenType::LParen => {
+        //             self.lparen();
+        //             let output = self.expression();
+        //             self.rparen();
+        //             output
+        //         }
+        //         TokenType::LSquare => self.list_or_table(),
+        //         TokenType::Name
+        //             if &self.compiler.source[token.span_start..token.span_end] == b"true"
+        //                 || &self.compiler.source[token.span_start..token.span_end] == b"false" =>
+        //         {
+        //             self.boolean()
+        //         }
+        //         TokenType::Name
+        //             if &self.compiler.source[token.span_start..token.span_end] == b"null" =>
+        //         {
+        //             self.null()
+        //         }
+        //         TokenType::String => self.string(),
+        //         TokenType::Number => self.number(),
+        //         TokenType::Dollar => self.variable(),
+        //         TokenType::Name => {
+        //             if bareword_context.as_string {
+        //                 let node_id = self.bareword(bareword_context.strictness);
+        //                 self.compiler.ast_nodes[node_id.0] = AstNode::String;
+        //                 node_id
+        //             } else {
+        //                 self.call()
+        //             }
+        //         }
+        //         _ => self.error("incomplete expression"),
+        //     }
+        // } else {
+        //     self.error("incomplete expression")
+        // };
+
         let mut expr = if self.is_lcurly2() {
             self.record_or_closure()
         } else if self.is_lparen2() {
@@ -1260,6 +1299,87 @@ impl Parser {
 
         while self.has_tokens() {
             self.peek2();
+
+            // let Some(token) = self.next_token else {
+            //     panic!("missing existing token");
+            // };
+
+            // match token.token_type {
+            //     TokenType::RCurly if context == BlockContext::Curlies => {
+            //         self.rcurly();
+            //         break;
+            //     }
+            //     TokenType::RCurly if context == BlockContext::Closure => {
+            //         // not responsible for parsing it, yield back to the closure pass
+            //         break;
+            //     }
+            //     TokenType::Semicolon | TokenType::Newline => {
+            //         self.next();
+            //         continue;
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"def" =>
+            //     {
+            //         code_body.push(self.def_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"let" =>
+            //     {
+            //         code_body.push(self.let_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"mut" =>
+            //     {
+            //         code_body.push(self.mut_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"while" =>
+            //     {
+            //         code_body.push(self.while_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"for" =>
+            //     {
+            //         code_body.push(self.for_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"loop" =>
+            //     {
+            //         code_body.push(self.loop_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"return" =>
+            //     {
+            //         code_body.push(self.return_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"continue" =>
+            //     {
+            //         code_body.push(self.continue_statement());
+            //     }
+            //     TokenType::Name
+            //         if &self.compiler.source[token.span_start..token.span_end] == b"break" =>
+            //     {
+            //         code_body.push(self.break_statement());
+            //     }
+            //     _ => {
+            //         let exp_span_start = self.position();
+            //         let expression = self.expression_or_assignment();
+            //         let exp_span_end = self.get_span_end(expression);
+
+            //         if self.is_semicolon() {
+            //             // This is a statement, not an expression
+            //             self.next();
+            //             code_body.push(self.create_node(
+            //                 AstNode::Statement(expression),
+            //                 exp_span_start,
+            //                 exp_span_end,
+            //             ))
+            //         } else {
+            //             code_body.push(expression);
+            //         }
+            //     }
+            // }
 
             if self.is_rcurly2() && context == BlockContext::Curlies {
                 self.rcurly();
