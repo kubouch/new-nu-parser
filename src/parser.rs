@@ -300,7 +300,11 @@ impl Parser {
         }
 
         while self.has_tokens2() {
-            if self.is_operator2() {
+            let Some(token) = self.next_token else {
+                panic!("Missing existing token.");
+            };
+
+            if token.is_operator(self.compiler.get_token_span_contents(&token)) {
                 let missing_space_before_op = !self.is_horizontal_space();
                 let op = self.operator();
                 let missing_space_after_op = !self.is_horizontal_space();
@@ -645,14 +649,20 @@ impl Parser {
         let mut span_end = self.position();
 
         loop {
-            if self.is_rsquare() {
+            let Some(token) = self.peek() else {
+                items.push(self.error("expected list item"));
+                // prevent forever looping if there is no token to put the error on
+                break;
+            };
+
+            if token.is_rsquare() {
                 span_end = self.position();
                 self.next();
                 break;
-            } else if self.is_comma() || self.is_newline() {
+            } else if token.is_comma() || token.is_newline() {
                 // TODO: should we disallow `[,,,]`?
                 self.next();
-            } else if self.is_semicolon() {
+            } else if token.is_semicolon() {
                 if items.len() != 1 {
                     self.error("semicolon to create table should immediately follow headers");
                 } else if !matches!(self.compiler.get_node(items[0]), AstNode::List(_)) {
@@ -660,14 +670,14 @@ impl Parser {
                 }
                 self.next();
                 is_table = true;
-            } else if self.is_simple_expression() {
+            } else if token.is_value() {
                 items.push(self.simple_expression(STRING_STRICT));
             } else {
                 items.push(self.error("expected list item"));
-                if self.peek().is_none() {
-                    // prevent forever looping if there is no token to put the error on
-                    break;
-                }
+                // if self.peek().is_none() {
+                //     // prevent forever looping if there is no token to put the error on
+                //     break;
+                // }
             }
         }
 
@@ -1525,78 +1535,6 @@ impl Parser {
         let span_end = span_start + b"break".len();
 
         self.create_node(AstNode::Break, span_start, span_end)
-    }
-
-    pub fn is_operator(&mut self) -> bool {
-        match self.peek() {
-            Some(Token {
-                token_type: TokenType::Name,
-                span_start,
-                span_end,
-            }) => {
-                &self.compiler.source[span_start..span_end] == b"and"
-                    || &self.compiler.source[span_start..span_end] == b"or"
-            }
-            Some(Token { token_type, .. }) => matches!(
-                token_type,
-                TokenType::Asterisk
-                    | TokenType::AsteriskAsterisk
-                    | TokenType::Dash
-                    | TokenType::EqualsEquals
-                    | TokenType::ExclamationEquals
-                    | TokenType::ForwardSlash
-                    | TokenType::LessThan
-                    | TokenType::LessThanEqual
-                    | TokenType::Plus
-                    | TokenType::PlusPlus
-                    | TokenType::GreaterThan
-                    | TokenType::GreaterThanEqual
-                    | TokenType::AmpersandAmpersand
-                    | TokenType::PipePipe
-                    | TokenType::Equals
-                    | TokenType::PlusEquals
-                    | TokenType::DashEquals
-                    | TokenType::AsteriskEquals
-                    | TokenType::ForwardSlashEquals
-            ),
-            _ => false,
-        }
-    }
-
-    pub fn is_operator2(&self) -> bool {
-        match self.next_token {
-            Some(Token {
-                token_type: TokenType::Name,
-                span_start,
-                span_end,
-            }) => {
-                &self.compiler.source[span_start..span_end] == b"and"
-                    || &self.compiler.source[span_start..span_end] == b"or"
-            }
-            Some(Token { token_type, .. }) => matches!(
-                token_type,
-                TokenType::Asterisk
-                    | TokenType::AsteriskAsterisk
-                    | TokenType::Dash
-                    | TokenType::EqualsEquals
-                    | TokenType::ExclamationEquals
-                    | TokenType::ForwardSlash
-                    | TokenType::LessThan
-                    | TokenType::LessThanEqual
-                    | TokenType::Plus
-                    | TokenType::PlusPlus
-                    | TokenType::GreaterThan
-                    | TokenType::GreaterThanEqual
-                    | TokenType::AmpersandAmpersand
-                    | TokenType::PipePipe
-                    | TokenType::Equals
-                    | TokenType::PlusEquals
-                    | TokenType::DashEquals
-                    | TokenType::AsteriskEquals
-                    | TokenType::ForwardSlashEquals
-            ),
-            _ => false,
-        }
     }
 
     pub fn is_comma(&mut self) -> bool {

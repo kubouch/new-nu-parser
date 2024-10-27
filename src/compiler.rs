@@ -2,6 +2,7 @@ use crate::errors::SourceError;
 use crate::parser::{AstNode, Block, NodeId};
 use crate::protocol::Command;
 use crate::resolver::{DeclId, Frame, NameBindings, ScopeId, VarId, Variable};
+use crate::token::Token;
 use crate::typechecker::{TypeId, Types};
 use std::collections::HashMap;
 
@@ -206,6 +207,13 @@ impl Compiler {
         let span = self.get_span(node_id);
         self.source
             .get(span.start..span.end)
+            .expect("internal error: missing source of span")
+    }
+
+    /// Get the source contents of a span of a token
+    pub fn get_token_span_contents(&self, token: &Token) -> &[u8] {
+        self.source
+            .get(token.span_start..token.span_end)
             .expect("internal error: missing source of span")
     }
 
