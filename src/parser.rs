@@ -260,10 +260,12 @@ impl Parser {
 
         let span_start = self.position();
 
+        self.peek2();
+
         // Check for special forms
-        if self.is_keyword(b"if") {
+        if self.is_keyword2(b"if") {
             return self.if_expression();
-        } else if self.is_keyword(b"match") {
+        } else if self.is_keyword2(b"match") {
             return self.match_expression();
         }
         // TODO
@@ -276,7 +278,7 @@ impl Parser {
         if let Some(Token {
             token_type: TokenType::Equals,
             ..
-        }) = self.peek()
+        }) = self.next_token
         {
             if !allow_assignment {
                 self.error("assignment found in expression");
@@ -297,8 +299,8 @@ impl Parser {
             );
         }
 
-        while self.has_tokens() {
-            if self.is_operator() {
+        while self.has_tokens2() {
+            if self.is_operator2() {
                 let missing_space_before_op = !self.is_horizontal_space();
                 let op = self.operator();
                 let missing_space_after_op = !self.is_horizontal_space();
@@ -445,9 +447,11 @@ impl Parser {
         };
 
         loop {
+            self.peek2();
+
             if self.is_horizontal_space() {
                 return expr;
-            } else if self.is_dotdot() {
+            } else if self.is_dotdot2() {
                 // Range
                 self.next();
 
@@ -464,7 +468,7 @@ impl Parser {
                     expr =
                         self.create_node(AstNode::Range { lhs: expr, rhs }, span_start, span_end);
                 }
-            } else if self.is_dot() {
+            } else if self.is_dot2() {
                 // Member access
                 self.next();
 
@@ -476,8 +480,9 @@ impl Parser {
                 let prev_offset = self.span_offset;
 
                 let name = self.name();
+                self.peek2();
 
-                let field_or_call = if self.is_lparen() {
+                let field_or_call = if self.is_lparen2() {
                     self.span_offset = prev_offset;
                     self.variable()
                 } else {
@@ -608,7 +613,7 @@ impl Parser {
         // let mut args = vec![];
         let span_start = self.position();
 
-        while self.has_tokens() {
+        while self.has_tokens2() {
             if self.is_newline() {
                 break;
             }
@@ -761,6 +766,8 @@ impl Parser {
     }
 
     pub fn operator(&mut self) -> NodeId {
+        let _span = span!();
+
         match self.peek() {
             Some(Token {
                 token_type,
@@ -928,6 +935,7 @@ impl Parser {
     }
 
     pub fn has_tokens2(&mut self) -> bool {
+        self.peek2();
         self.next_token.is_some()
     }
 
@@ -1034,7 +1042,7 @@ impl Parser {
 
             let mut output = vec![];
 
-            while self.has_tokens() {
+            while self.has_tokens2() {
                 match params_context {
                     ParamsContext::Pipes => {
                         if self.is_pipe() {
@@ -1100,7 +1108,7 @@ impl Parser {
 
             let mut output = vec![];
 
-            while self.has_tokens() {
+            while self.has_tokens2() {
                 if self.is_greater_than() {
                     break;
                 }
@@ -1555,6 +1563,42 @@ impl Parser {
         }
     }
 
+    pub fn is_operator2(&self) -> bool {
+        match self.next_token {
+            Some(Token {
+                token_type: TokenType::Name,
+                span_start,
+                span_end,
+            }) => {
+                &self.compiler.source[span_start..span_end] == b"and"
+                    || &self.compiler.source[span_start..span_end] == b"or"
+            }
+            Some(Token { token_type, .. }) => matches!(
+                token_type,
+                TokenType::Asterisk
+                    | TokenType::AsteriskAsterisk
+                    | TokenType::Dash
+                    | TokenType::EqualsEquals
+                    | TokenType::ExclamationEquals
+                    | TokenType::ForwardSlash
+                    | TokenType::LessThan
+                    | TokenType::LessThanEqual
+                    | TokenType::Plus
+                    | TokenType::PlusPlus
+                    | TokenType::GreaterThan
+                    | TokenType::GreaterThanEqual
+                    | TokenType::AmpersandAmpersand
+                    | TokenType::PipePipe
+                    | TokenType::Equals
+                    | TokenType::PlusEquals
+                    | TokenType::DashEquals
+                    | TokenType::AsteriskEquals
+                    | TokenType::ForwardSlashEquals
+            ),
+            _ => false,
+        }
+    }
+
     pub fn is_comma(&mut self) -> bool {
         matches!(
             self.peek(),
@@ -1825,9 +1869,29 @@ impl Parser {
         )
     }
 
+    pub fn is_dot2(&self) -> bool {
+        matches!(
+            self.next_token,
+            Some(Token {
+                token_type: TokenType::Dot,
+                ..
+            })
+        )
+    }
+
     pub fn is_dotdot(&mut self) -> bool {
         matches!(
             self.peek(),
+            Some(Token {
+                token_type: TokenType::DotDot,
+                ..
+            })
+        )
+    }
+
+    pub fn is_dotdot2(&self) -> bool {
+        matches!(
+            self.next_token,
             Some(Token {
                 token_type: TokenType::DotDot,
                 ..
