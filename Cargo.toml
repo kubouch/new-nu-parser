@@ -10,7 +10,12 @@ tracy-client = { version = "0.17.3", default-features = false } # for tracy v0.1
 
 [features]
 # By default, profiling is disabled. Enable it by the "profile" feature
-profile = ["tracy-client/enable", "tracy-client/flush-on-exit"]
+profile = [
+    "tracy-client/enable",
+    "tracy-client/flush-on-exit",
+    "tracy-client/sampling",
+    "tracy-client/code-transfer",
+]
 
 [lib]
 name = "new_nu_parser"
