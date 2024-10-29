@@ -94,25 +94,9 @@ impl Token {
         matches!(self.token_type, TokenType::Comma)
     }
 
-    // pub fn is_lcurly(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::LCurly,
-    //             ..
-    //         })
-    //     )
-    // }
-
-    // pub fn is_lcurly2(&self) -> bool {
-    //     matches!(
-    //         self.next_token,
-    //         Some(Token {
-    //             token_type: TokenType::LCurly,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_lcurly(&self) -> bool {
+        matches!(self.token_type, TokenType::LCurly)
+    }
 
     // pub fn is_rcurly(&mut self) -> bool {
     //     matches!(
@@ -134,25 +118,9 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_lparen(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::LParen,
-    //             ..
-    //         })
-    //     )
-    // }
-
-    // pub fn is_lparen2(&self) -> bool {
-    //     matches!(
-    //         self.next_token,
-    //         Some(Token {
-    //             token_type: TokenType::LParen,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_lparen(&self) -> bool {
+        matches!(self.token_type, TokenType::LParen)
+    }
 
     // pub fn is_rparen(&mut self) -> bool {
     //     matches!(
@@ -164,15 +132,9 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_lsquare(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::LSquare,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_lsquare(&self) -> bool {
+        matches!(self.token_type, TokenType::LSquare)
+    }
 
     // pub fn is_lsquare2(&self) -> bool {
     //     matches!(
@@ -188,45 +150,21 @@ impl Token {
         matches!(self.token_type, TokenType::RSquare)
     }
 
-    // pub fn is_less_than(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::LessThan,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_less_than(&self) -> bool {
+        matches!(self.token_type, TokenType::LessThan)
+    }
 
-    // pub fn is_greater_than(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::GreaterThan,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_greater_than(&self) -> bool {
+        matches!(self.token_type, TokenType::GreaterThan)
+    }
 
-    // pub fn is_pipe(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::Pipe,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_pipe(&self) -> bool {
+        matches!(self.token_type, TokenType::Pipe)
+    }
 
-    // pub fn is_dollar(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::Dollar,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_dollar(&self) -> bool {
+        matches!(self.token_type, TokenType::Dollar)
+    }
 
     // pub fn is_dollar2(&mut self) -> bool {
     //     matches!(
@@ -238,15 +176,9 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_question_mark(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::QuestionMark,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_question_mark(&self) -> bool {
+        matches!(self.token_type, TokenType::QuestionMark)
+    }
 
     // pub fn is_thin_arrow(&mut self) -> bool {
     //     matches!(
@@ -298,15 +230,9 @@ impl Token {
     // //     )
     // // }
 
-    // pub fn is_colon(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::Colon,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_colon(&self) -> bool {
+        matches!(self.token_type, TokenType::Colon)
+    }
 
     pub fn is_newline(&self) -> bool {
         matches!(self.token_type, TokenType::Newline)
@@ -326,45 +252,13 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_dot(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::Dot,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_dot(&self) -> bool {
+        matches!(self.token_type, TokenType::Dot)
+    }
 
-    // pub fn is_dot2(&self) -> bool {
-    //     matches!(
-    //         self.next_token,
-    //         Some(Token {
-    //             token_type: TokenType::Dot,
-    //             ..
-    //         })
-    //     )
-    // }
-
-    // pub fn is_dotdot(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::DotDot,
-    //             ..
-    //         })
-    //     )
-    // }
-
-    // pub fn is_dotdot2(&self) -> bool {
-    //     matches!(
-    //         self.next_token,
-    //         Some(Token {
-    //             token_type: TokenType::DotDot,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_dotdot(&self) -> bool {
+        matches!(self.token_type, TokenType::DotDot)
+    }
 
     // pub fn is_coloncolon(&mut self) -> bool {
     //     matches!(
@@ -376,15 +270,9 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_number(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::Number,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_number(&self) -> bool {
+        matches!(self.token_type, TokenType::Number)
+    }
 
     // pub fn is_number2(&self) -> bool {
     //     matches!(
@@ -396,15 +284,9 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_string(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::String,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_string(&self) -> bool {
+        matches!(self.token_type, TokenType::String)
+    }
 
     // pub fn is_string2(&self) -> bool {
     //     matches!(
@@ -432,15 +314,9 @@ impl Token {
     //     )
     // }
 
-    // pub fn is_name(&mut self) -> bool {
-    //     matches!(
-    //         self.peek(),
-    //         Some(Token {
-    //             token_type: TokenType::Name,
-    //             ..
-    //         })
-    //     )
-    // }
+    pub fn is_name(&self) -> bool {
+        matches!(self.token_type, TokenType::Name)
+    }
 
     // pub fn is_bareword(&mut self, name_strictness: NameStrictness) -> bool {
     //     matches!(

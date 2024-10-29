@@ -380,6 +380,10 @@ impl Parser {
 
         self.peek_bareword2(bareword_context.strictness);
 
+        let Some(token) = self.next_token else {
+            return self.error("incomplete expression");
+        };
+
         // let mut expr = if let Some(token) = self.next_token {
         //     match token.token_type {
         //         TokenType::LCurly => self.record_or_closure(),
@@ -419,26 +423,28 @@ impl Parser {
         //     self.error("incomplete expression")
         // };
 
-        let mut expr = if self.is_lcurly2() {
+        let mut expr = if token.is_lcurly() {
             self.record_or_closure()
-        } else if self.is_lparen2() {
+        } else if token.is_lparen() {
             self.lparen();
             let output = self.expression();
             self.rparen();
             output
-        } else if self.is_lsquare2() {
+        } else if token.is_lsquare() {
             self.list_or_table()
-        } else if self.is_keyword2(b"true") || self.is_keyword2(b"false") {
+        } else if token.is_keyword(b"true", self.compiler.get_token_span_contents(&token))
+            || token.is_keyword(b"false", self.compiler.get_token_span_contents(&token))
+        {
             self.boolean()
-        } else if self.is_keyword2(b"null") {
+        } else if token.is_keyword(b"null", self.compiler.get_token_span_contents(&token)) {
             self.null()
-        } else if self.is_string2() {
+        } else if token.is_string() {
             self.string()
-        } else if self.is_number2() {
+        } else if token.is_number() {
             self.number()
-        } else if self.is_dollar2() {
+        } else if token.is_dollar() {
             self.variable()
-        } else if self.is_bareword2(bareword_context.strictness) {
+        } else if self.is_name() {
             if bareword_context.as_string {
                 let node_id = self.bareword(bareword_context.strictness);
                 self.compiler.ast_nodes[node_id.0] = AstNode::String;
@@ -453,9 +459,13 @@ impl Parser {
         loop {
             self.peek2();
 
+            let Some(token) = self.next_token else {
+                return expr;
+            };
+
             if self.is_horizontal_space() {
                 return expr;
-            } else if self.is_dotdot2() {
+            } else if token.is_dotdot() {
                 // Range
                 self.next();
 
@@ -472,7 +482,7 @@ impl Parser {
                     expr =
                         self.create_node(AstNode::Range { lhs: expr, rhs }, span_start, span_end);
                 }
-            } else if self.is_dot2() {
+            } else if token.is_dot() {
                 // Member access
                 self.next();
 
@@ -486,12 +496,23 @@ impl Parser {
                 let name = self.name();
                 self.peek2();
 
-                let field_or_call = if self.is_lparen2() {
-                    self.span_offset = prev_offset;
-                    self.variable()
+                let field_or_call = if let Some(token) = self.next_token {
+                    if token.is_lparen() {
+                        self.span_offset = prev_offset;
+                        self.variable()
+                    } else {
+                        name
+                    }
                 } else {
                     name
                 };
+
+                // let field_or_call = if self.is_lparen2() {
+                //     self.span_offset = prev_offset;
+                //     self.variable()
+                // } else {
+                //     name
+                // };
                 let span_end = self.get_span_end(field_or_call);
 
                 match self.compiler.get_node_mut(field_or_call) {
@@ -1053,34 +1074,53 @@ impl Parser {
             let mut output = vec![];
 
             while self.has_tokens2() {
+                let Some(token) = self.next_token else {
+                    panic!("missing existing token");
+                };
+
                 match params_context {
                     ParamsContext::Pipes => {
-                        if self.is_pipe() {
+                        if token.is_pipe() {
                             break;
                         }
                     }
                     ParamsContext::Squares => {
-                        if self.is_rsquare() {
+                        if token.is_rsquare() {
                             break;
                         }
                     }
                 }
 
-                if self.is_comma() {
+                if token.is_comma() {
                     self.next();
                     continue;
                 }
 
                 let name = self.name();
 
-                let ty = if self.is_colon() {
-                    // We have a type
-                    self.colon();
+                self.peek2();
 
-                    Some(self.typename())
+                let ty = if let Some(token) = self.next_token {
+                    if token.is_colon() {
+                        // We have a type
+                        self.colon();
+
+                        Some(self.typename())
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
+
+                // let ty = if token.is_colon() {
+                //     // We have a type
+                //     self.colon();
+
+                //     Some(self.typename())
+                // } else {
+                //     None
+                // };
 
                 let name_span = self.compiler.spans[name.0];
                 let param_span_end = if let Some(ty_id) = ty {
@@ -1119,11 +1159,15 @@ impl Parser {
             let mut output = vec![];
 
             while self.has_tokens2() {
-                if self.is_greater_than() {
+                let Some(token) = self.next_token else {
+                    panic!("missing existing token");
+                };
+
+                if token.is_greater_than() {
                     break;
                 }
 
-                if self.is_comma() {
+                if token.is_comma() {
                     self.next();
                     continue;
                 }
@@ -1142,40 +1186,99 @@ impl Parser {
 
     pub fn typename(&mut self) -> NodeId {
         let _span = span!();
-        match self.peek() {
-            Some(Token {
-                token_type: TokenType::Name,
-                span_start,
-                span_end,
-                ..
-            }) => {
-                let name = self.name();
-                let mut params = None;
-                if self.is_less_than() {
-                    // We have generics
+
+        self.peek2();
+
+        let Some(token) = self.next_token else {
+            return self.error("missing typename");
+        };
+
+        if token.is_name() {
+            let name = self.name();
+            let mut params = None;
+
+            self.peek2();
+
+            if let Some(token) = self.next_token {
+                if token.is_less_than() {
+                    // We have type params
                     params = Some(self.type_params());
                 }
+            }
+            // if token.is_less_than() {
+            //     // We have type params
+            //     params = Some(self.type_params());
+            // }
 
-                let optional = if self.is_question_mark() {
+            self.peek2();
+
+            let optional = if let Some(token) = self.next_token {
+                if token.is_question_mark() {
                     // We have an optional type
                     self.next();
                     true
                 } else {
                     false
-                };
+                }
+            } else {
+                false
+            };
 
-                self.create_node(
-                    AstNode::Type {
-                        name,
-                        params,
-                        optional,
-                    },
-                    span_start,
-                    span_end,
-                )
-            }
-            _ => self.error("expect name"),
+            // let optional = if token.is_question_mark() {
+            //     // We have an optional type
+            //     self.next();
+            //     true
+            // } else {
+            //     false
+            // };
+
+            self.create_node(
+                AstNode::Type {
+                    name,
+                    params,
+                    optional,
+                },
+                token.span_start,
+                token.span_end,
+            )
+        } else {
+            self.error("expect name")
         }
+
+        // match self.peek() {
+        //     Some(Token {
+        //         token_type: TokenType::Name,
+        //         span_start,
+        //         span_end,
+        //         ..
+        //     }) => {
+        //         let name = self.name();
+        //         let mut params = None;
+        //         if self.is_less_than() {
+        //             // We have generics
+        //             params = Some(self.type_params());
+        //         }
+
+        //         let optional = if self.is_question_mark() {
+        //             // We have an optional type
+        //             self.next();
+        //             true
+        //         } else {
+        //             false
+        //         };
+
+        //         self.create_node(
+        //             AstNode::Type {
+        //                 name,
+        //                 params,
+        //                 optional,
+        //             },
+        //             span_start,
+        //             span_end,
+        //         )
+        //     }
+        //     _ => self.error("expect name"),
+        // }
     }
 
     pub fn def_statement(&mut self) -> NodeId {
@@ -1315,134 +1418,138 @@ impl Parser {
             self.lcurly();
         }
 
-        while self.has_tokens() {
-            self.peek2();
+        while self.has_tokens2() {
+            // self.peek2();
+
+            let Some(token) = self.next_token else {
+                panic!("missing existing token");
+            };
 
             // let Some(token) = self.next_token else {
-            //     panic!("missing existing token");
+            //     break;
             // };
 
-            // match token.token_type {
-            //     TokenType::RCurly if context == BlockContext::Curlies => {
-            //         self.rcurly();
-            //         break;
-            //     }
-            //     TokenType::RCurly if context == BlockContext::Closure => {
-            //         // not responsible for parsing it, yield back to the closure pass
-            //         break;
-            //     }
-            //     TokenType::Semicolon | TokenType::Newline => {
-            //         self.next();
-            //         continue;
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"def" =>
-            //     {
-            //         code_body.push(self.def_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"let" =>
-            //     {
-            //         code_body.push(self.let_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"mut" =>
-            //     {
-            //         code_body.push(self.mut_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"while" =>
-            //     {
-            //         code_body.push(self.while_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"for" =>
-            //     {
-            //         code_body.push(self.for_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"loop" =>
-            //     {
-            //         code_body.push(self.loop_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"return" =>
-            //     {
-            //         code_body.push(self.return_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"continue" =>
-            //     {
-            //         code_body.push(self.continue_statement());
-            //     }
-            //     TokenType::Name
-            //         if &self.compiler.source[token.span_start..token.span_end] == b"break" =>
-            //     {
-            //         code_body.push(self.break_statement());
-            //     }
-            //     _ => {
-            //         let exp_span_start = self.position();
-            //         let expression = self.expression_or_assignment();
-            //         let exp_span_end = self.get_span_end(expression);
-
-            //         if self.is_semicolon() {
-            //             // This is a statement, not an expression
-            //             self.next();
-            //             code_body.push(self.create_node(
-            //                 AstNode::Statement(expression),
-            //                 exp_span_start,
-            //                 exp_span_end,
-            //             ))
-            //         } else {
-            //             code_body.push(expression);
-            //         }
-            //     }
-            // }
-
-            if self.is_rcurly2() && context == BlockContext::Curlies {
-                self.rcurly();
-                break;
-            } else if self.is_rcurly2() && context == BlockContext::Closure {
-                // not responsible for parsing it, yield back to the closure pass
-                break;
-            } else if self.is_semicolon2() || self.is_newline() {
-                self.next();
-                continue;
-            } else if self.is_keyword2(b"def") {
-                code_body.push(self.def_statement());
-            } else if self.is_keyword2(b"let") {
-                code_body.push(self.let_statement());
-            } else if self.is_keyword2(b"mut") {
-                code_body.push(self.mut_statement());
-            } else if self.is_keyword2(b"while") {
-                code_body.push(self.while_statement());
-            } else if self.is_keyword2(b"for") {
-                code_body.push(self.for_statement());
-            } else if self.is_keyword2(b"loop") {
-                code_body.push(self.loop_statement());
-            } else if self.is_keyword2(b"return") {
-                code_body.push(self.return_statement());
-            } else if self.is_keyword2(b"continue") {
-                code_body.push(self.continue_statement());
-            } else if self.is_keyword2(b"break") {
-                code_body.push(self.break_statement());
-            } else {
-                let exp_span_start = self.position();
-                let expression = self.expression_or_assignment();
-                let exp_span_end = self.get_span_end(expression);
-
-                if self.is_semicolon() {
-                    // This is a statement, not an expression
+            match token.token_type {
+                TokenType::RCurly if context == BlockContext::Curlies => {
+                    self.rcurly();
+                    break;
+                }
+                TokenType::RCurly if context == BlockContext::Closure => {
+                    // not responsible for parsing it, yield back to the closure pass
+                    break;
+                }
+                TokenType::Semicolon | TokenType::Newline => {
                     self.next();
-                    code_body.push(self.create_node(
-                        AstNode::Statement(expression),
-                        exp_span_start,
-                        exp_span_end,
-                    ))
-                } else {
-                    code_body.push(expression);
+                    continue;
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"def" =>
+                {
+                    code_body.push(self.def_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"let" =>
+                {
+                    code_body.push(self.let_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"mut" =>
+                {
+                    code_body.push(self.mut_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"while" =>
+                {
+                    code_body.push(self.while_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"for" =>
+                {
+                    code_body.push(self.for_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"loop" =>
+                {
+                    code_body.push(self.loop_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"return" =>
+                {
+                    code_body.push(self.return_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"continue" =>
+                {
+                    code_body.push(self.continue_statement());
+                }
+                TokenType::Name
+                    if &self.compiler.source[token.span_start..token.span_end] == b"break" =>
+                {
+                    code_body.push(self.break_statement());
+                }
+                _ => {
+                    let exp_span_start = self.position();
+                    let expression = self.expression_or_assignment();
+                    let exp_span_end = self.get_span_end(expression);
+
+                    if self.is_semicolon() {
+                        // This is a statement, not an expression
+                        self.next();
+                        code_body.push(self.create_node(
+                            AstNode::Statement(expression),
+                            exp_span_start,
+                            exp_span_end,
+                        ))
+                    } else {
+                        code_body.push(expression);
+                    }
                 }
             }
+
+            // if self.is_rcurly2() && context == BlockContext::Curlies {
+            //     self.rcurly();
+            //     break;
+            // } else if self.is_rcurly2() && context == BlockContext::Closure {
+            //     // not responsible for parsing it, yield back to the closure pass
+            //     break;
+            // } else if self.is_semicolon2() || self.is_newline() {
+            //     self.next();
+            //     continue;
+            // } else if self.is_keyword2(b"def") {
+            //     code_body.push(self.def_statement());
+            // } else if self.is_keyword2(b"let") {
+            //     code_body.push(self.let_statement());
+            // } else if self.is_keyword2(b"mut") {
+            //     code_body.push(self.mut_statement());
+            // } else if self.is_keyword2(b"while") {
+            //     code_body.push(self.while_statement());
+            // } else if self.is_keyword2(b"for") {
+            //     code_body.push(self.for_statement());
+            // } else if self.is_keyword2(b"loop") {
+            //     code_body.push(self.loop_statement());
+            // } else if self.is_keyword2(b"return") {
+            //     code_body.push(self.return_statement());
+            // } else if self.is_keyword2(b"continue") {
+            //     code_body.push(self.continue_statement());
+            // } else if self.is_keyword2(b"break") {
+            //     code_body.push(self.break_statement());
+            // } else {
+            //     let exp_span_start = self.position();
+            //     let expression = self.expression_or_assignment();
+            //     let exp_span_end = self.get_span_end(expression);
+
+            //     if self.is_semicolon() {
+            //         // This is a statement, not an expression
+            //         self.next();
+            //         code_body.push(self.create_node(
+            //             AstNode::Statement(expression),
+            //             exp_span_start,
+            //             exp_span_end,
+            //         ))
+            //     } else {
+            //         code_body.push(expression);
+            //     }
+            // }
         }
 
         self.compiler.blocks.push(Block::new(code_body));
