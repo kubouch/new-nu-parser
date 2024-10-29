@@ -262,15 +262,17 @@ impl Parser {
 
         self.peek2();
 
-        // Check for special forms
-        if self.is_keyword2(b"if") {
-            return self.if_expression();
-        } else if self.is_keyword2(b"match") {
-            return self.match_expression();
+        if let Some(token) = self.next_token {
+            // Check for special forms
+            if token.is_keyword(b"if", self.compiler.get_token_span_contents(&token)) {
+                return self.if_expression();
+            } else if token.is_keyword(b"match", self.compiler.get_token_span_contents(&token)) {
+                return self.match_expression();
+            }
+            // TODO
+            // } else if self.is_keyword(b"where") {
+            // }
         }
-        // TODO
-        // } else if self.is_keyword(b"where") {
-        // }
 
         // Otherwise assume a math expression
         let mut leftmost = self.simple_expression(NAME_STRICT);
