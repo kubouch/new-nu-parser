@@ -11,6 +11,7 @@ pub struct Parser {
     content_length: usize,
     next_token: Option<Token>,
     next_offset: usize,
+    tokens: Vec<Token>, // TODO: Remove, just for testing
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -220,6 +221,15 @@ impl Parser {
             span_offset,
             next_token: None,
             next_offset: span_offset,
+            tokens: vec![],
+        }
+    }
+
+    pub fn lex(&mut self) {
+        while self.has_tokens() {
+            if let Some(token) = self.next() {
+                self.tokens.push(token);
+            }
         }
     }
 
@@ -2572,10 +2582,10 @@ impl Parser {
 
     pub fn lex_symbol(&mut self) -> Option<Token> {
         // try span redirection symbol first.
-        let result = self.lex_redirect_symbol();
-        if result.is_some() {
-            return result;
-        }
+        // let result = self.lex_redirect_symbol();
+        // if result.is_some() {
+        //     return result;
+        // }
 
         let span_start = self.span_offset;
         let result = match self.compiler.source[span_start] {
