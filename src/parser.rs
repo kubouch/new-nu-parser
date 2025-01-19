@@ -52,6 +52,15 @@ pub enum BarewordContext {
     Call,
 }
 
+/// Whether assignment is allowed when parsing math expression
+#[derive(Debug, PartialEq)]
+pub enum AssignmentContext {
+    /// Assignment is allowed
+    Allowed,
+    /// Assignment is not allowed
+    NotAllowed,
+}
+
 // TODO: All nodes with Vec<...> should be moved to their own ID (like BlockId) to allow Copy trait
 #[derive(Debug, PartialEq, Clone)]
 pub enum AstNode {
@@ -254,15 +263,15 @@ impl Parser {
 
     pub fn expression_or_assignment(&mut self) -> NodeId {
         let _span = span!();
-        self.math_expression(true)
+        self.math_expression(AssignmentContext::Allowed)
     }
 
     pub fn expression(&mut self) -> NodeId {
         let _span = span!();
-        self.math_expression(false)
+        self.math_expression(AssignmentContext::NotAllowed)
     }
 
-    pub fn math_expression(&mut self, allow_assignment: bool) -> NodeId {
+    pub fn math_expression(&mut self, assignment_context: AssignmentContext) -> NodeId {
         let _span = span!();
         let mut expr_stack = Vec::<(NodeId, NodeId)>::new();
 
@@ -284,7 +293,7 @@ impl Parser {
         let mut leftmost = self.simple_expression(BarewordContext::Call);
 
         if self.is_equals() {
-            if !allow_assignment {
+            if assignment_context == AssignmentContext::NotAllowed {
                 self.error("assignment found in expression");
             }
             let op = self.operator();
@@ -319,7 +328,9 @@ impl Parser {
 
                 let op_prec = self.operator_precedence(op);
 
-                if op_prec == ASSIGNMENT_PRECEDENCE && !allow_assignment {
+                if op_prec == ASSIGNMENT_PRECEDENCE
+                    && assignment_context == AssignmentContext::NotAllowed
+                {
                     self.error_on_node("assignment found in expression", op);
                 }
 
