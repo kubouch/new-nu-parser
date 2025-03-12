@@ -435,6 +435,10 @@ pub enum Token {
     OutErrGreaterThan,
     #[token("o+e>>")]
     OutErrGreaterGreaterThan,
+    /// Redirecting stdout is redundant as '|' should be used instead. We still detect this to
+    /// report a nice error.
+    #[token("o>|")]
+    OutGreaterThanPipe,
     #[token("e>|")]
     ErrGreaterThanPipe,
     #[token("o+e>|")]

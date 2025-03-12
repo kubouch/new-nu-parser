@@ -1,4 +1,4 @@
-use crate::protocol::{Command, Declaration};
+use crate::protocol::{Command, Declaration, Sentence};
 use crate::{
     compiler::Compiler,
     errors::{Severity, SourceError},
@@ -202,6 +202,20 @@ impl<'a> Resolver<'a> {
             AstNode::Variable => self.resolve_variable(node_id),
             AstNode::Call { ref parts } => self.resolve_call(node_id, parts),
             AstNode::Block(block_id) => self.resolve_block(node_id, block_id, None),
+            AstNode::Pipeline(pipeline_id) => {
+                let pipeline = self
+                    .compiler
+                    .pipelines
+                    .get(pipeline_id.0)
+                    .expect("Pipeline not found");
+                for element in &pipeline.elements {
+                    if let Some(id) = element.inp_pipe {
+                        self.resolve_node(id);
+                    }
+                    self.resolve_node(element.expr);
+                }
+            }
+            AstNode::Statement(statement_id) => self.resolve_node(statement_id),
             AstNode::Closure { params, block } => {
                 // making sure the closure parameters and body end up in the same scope frame
                 let closure_scope = if let Some(params) = params {
@@ -419,9 +433,16 @@ impl<'a> Resolver<'a> {
             self.enter_scope(node_id);
         }
 
-        for inner_node_id in &block.nodes {
-            self.resolve_node(*inner_node_id);
+        for sentence in &block.sentences {
+            match sentence {
+                Sentence::Pipeline(node_id) => self.resolve_node(*node_id),
+                Sentence::Statement(node_id) => self.resolve_node(*node_id),
+            }
         }
+
+        // for inner_node_id in &block.nodes {
+        //     self.resolve_node(*inner_node_id);
+        // }
         self.exit_scope();
     }
 

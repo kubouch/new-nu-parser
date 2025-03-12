@@ -1,6 +1,6 @@
 use crate::errors::SourceError;
-use crate::parser::{AstNode, Block, NodeId};
-use crate::protocol::Command;
+use crate::parser::{AstNode, NodeId};
+use crate::protocol::{Block, Command, Pipeline};
 use crate::resolver::{DeclId, Frame, NameBindings, ScopeId, VarId, Variable};
 use crate::typechecker::{TypeId, Types};
 use std::collections::HashMap;
@@ -44,7 +44,8 @@ pub struct Compiler {
     pub ast_nodes: Vec<AstNode>,
     pub node_types: Vec<TypeId>,
     // node_lifetimes: Vec<AllocationLifetime>,
-    pub blocks: Vec<Block>, // Blocks, indexed by BlockId
+    pub blocks: Vec<Block>,       // indexed by BlockId
+    pub pipelines: Vec<Pipeline>, // indexed by PipelineId
     pub source: Vec<u8>,
     pub file_offsets: Vec<(String, usize, usize)>, // fname, start, end
 
@@ -87,6 +88,7 @@ impl Compiler {
             ast_nodes: vec![],
             node_types: vec![],
             blocks: vec![],
+            pipelines: vec![],
             source: vec![],
             file_offsets: vec![],
 

@@ -11,6 +11,11 @@ fn main() {
     let mut compiler = Compiler::new();
     let mut do_print = true;
 
+    println!(
+        "AstNode {} bytes",
+        std::mem::size_of::<new_nu_parser::parser::AstNode>()
+    );
+
     for arg in std::env::args().skip(1) {
         if arg == "--no-print" {
             do_print = false;

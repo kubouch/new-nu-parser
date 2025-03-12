@@ -1,6 +1,7 @@
 use crate::compiler::Compiler;
 use crate::errors::{Severity, SourceError};
 use crate::parser::{AstNode, NodeId};
+use crate::protocol::Sentence;
 use nu_protocol::ast::{Math, Operator};
 use nu_protocol::ir::{Instruction, IrBlock, Literal};
 use nu_protocol::{RegId, Span};
@@ -112,10 +113,12 @@ impl<'a> IrGenerator<'a> {
             AstNode::Block(block_id) => {
                 let block = &self.compiler.blocks[block_id.0];
                 let mut last = None;
-                for id in &block.nodes {
-                    last = self.generate_node(*id);
-                    last?;
-                }
+                // for sentence in &block.sentences {
+                //     for id in &block.nodes {
+                //         last = self.generate_node(*id);
+                //         last?;
+                //     }
+                // }
                 last
             }
             AstNode::BinaryOp { lhs, op, rhs } => {

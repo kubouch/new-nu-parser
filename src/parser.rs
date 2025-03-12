@@ -1,6 +1,7 @@
 use crate::compiler::{Compiler, RollbackPoint, Span};
 use crate::errors::{Severity, SourceError};
 use crate::lexer::{Token, Tokens};
+use crate::protocol::*; // TODO: selective import
 
 use tracy_client::span;
 
@@ -15,16 +16,19 @@ pub struct NodeId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockId(pub usize);
 
-#[derive(Debug, Clone)]
-pub struct Block {
-    pub nodes: Vec<NodeId>,
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PipelineId(pub usize);
 
-impl Block {
-    pub fn new(nodes: Vec<NodeId>) -> Block {
-        Block { nodes }
-    }
-}
+// #[derive(Debug, Clone)]
+// pub struct Block {
+//     pub nodes: Vec<NodeId>,
+// }
+
+// impl Block {
+//     pub fn new(nodes: Vec<NodeId>) -> Block {
+//         Block { nodes }
+//     }
+// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BlockContext {
@@ -59,6 +63,12 @@ pub enum AssignmentContext {
     Allowed,
     /// Assignment is not allowed
     NotAllowed,
+}
+
+pub enum Tag {
+    Int,
+    String,
+    Type(u8, u8, u8),
 }
 
 // TODO: All nodes with Vec<...> should be moved to their own ID (like BlockId) to allow Copy trait
@@ -159,6 +169,19 @@ pub enum AstNode {
         old_name: NodeId,
     },
 
+    // Redirections
+    RedirectOutToFile,
+    RedirectOutToFileAppend,
+    RedirectErrToFile,
+    RedirectErrToFileAppend,
+    RedirectOutErrToFile,
+    RedirectOutErrToFileAppend,
+
+    // Pipeline connectors
+    Pipe,
+    RedirectErrToPipe,
+    RedirectOutErrToPipe,
+
     /// Long flag ('--' + one or more letters)
     FlagLong,
     /// Short flag ('-' + single letter)
@@ -196,6 +219,8 @@ pub enum AstNode {
         field: NodeId,
     },
     Block(BlockId),
+    Pipeline(PipelineId),
+    Redirection(PipelineRedirection),
     If {
         condition: NodeId,
         then_block: NodeId,
@@ -775,6 +800,23 @@ impl Parser {
         self.create_node(AstNode::Name, span.start, span.end)
     }
 
+    pub fn redirection(&mut self) -> NodeId {
+        let (token, span) = self.tokens.peek();
+        let node = match token {
+            Token::OutGreaterThan => AstNode::RedirectOutToFile,
+            Token::OutGreaterGreaterThan => AstNode::RedirectOutToFileAppend,
+            Token::ErrGreaterThan => AstNode::RedirectErrToFile,
+            Token::ErrGreaterGreaterThan => AstNode::RedirectErrToFileAppend,
+            Token::OutErrGreaterThan => AstNode::RedirectOutErrToFile,
+            Token::OutErrGreaterGreaterThan => AstNode::RedirectOutErrToFileAppend,
+            _ => {
+                return self.error("expected: redirection");
+            }
+        };
+
+        self.advance_node(node, span)
+    }
+
     pub fn has_tokens(&mut self) -> bool {
         self.tokens.peek_token() != Token::Eof
     }
@@ -875,7 +917,9 @@ impl Parser {
         let span_end;
         let param_list = {
             match params_context {
-                ParamsContext::Pipes => self.pipe(),
+                ParamsContext::Pipes => {
+                    self.pipe();
+                }
                 ParamsContext::Squares => self.lsquare(),
             }
 
@@ -928,7 +972,9 @@ impl Parser {
             span_end = self.position() + 1;
 
             match params_context {
-                ParamsContext::Pipes => self.pipe(),
+                ParamsContext::Pipes => {
+                    self.pipe();
+                }
                 ParamsContext::Squares => self.rsquare(),
             }
 
@@ -1169,6 +1215,99 @@ impl Parser {
         }
     }
 
+    pub fn redirection_full(&mut self) -> Option<PipelineRedirection> {
+        let first_redirection = if self.is_redirection() {
+            let redirection_id = self.redirection();
+            let expr = self.expression();
+            Some((
+                get_redirection_src_tgt(self.compiler.get_node(redirection_id), expr),
+                redirection_id,
+            ))
+        } else {
+            None
+        };
+
+        match first_redirection {
+            Some(((src1, tgt1), redirection1_id)) => {
+                if self.is_redirection() {
+                    if src1 == RedirectionSource::StdoutAndStderr {
+                        self.error_on_node("Cannot have redirection after o+e>", redirection1_id);
+                    }
+
+                    let redirection2_id = self.redirection();
+                    let expr = self.expression();
+
+                    let (src2, tgt2) =
+                        get_redirection_src_tgt(self.compiler.get_node(redirection2_id), expr);
+
+                    if src1 == src2 {
+                        self.error_on_node(
+                            "Can't have two redirection with the same source.",
+                            redirection1_id,
+                        );
+                    }
+
+                    if src2 == RedirectionSource::StdoutAndStderr {
+                        self.error_on_node(
+                            "Cannot have o+e> redirection after another redirection",
+                            redirection2_id,
+                        );
+                    }
+
+                    let (out, err) = if src1 == RedirectionSource::Stdout {
+                        (tgt1, tgt2)
+                    } else {
+                        (tgt2, tgt1)
+                    };
+
+                    Some(PipelineRedirection::Separate { out, err })
+                } else {
+                    Some(PipelineRedirection::Single {
+                        source: src1,
+                        target: tgt1,
+                    })
+                }
+            }
+            None => None,
+        }
+    }
+
+    pub fn pipeline(&mut self) -> NodeId {
+        let _span = span!();
+        let span_start = self.position();
+        let mut elements = vec![];
+
+        let expr = self.expression();
+        let redirection = self.redirection_full(); // TODO: Remove pipeline redirection from there
+
+        elements.push(PipelineElement {
+            inp_pipe: None,
+            expr,
+            redirection,
+        });
+
+        while self.is_pipeline_connector() {
+            let pipe = self.pipeline_connector();
+            let expr = self.expression();
+            let redirection = self.redirection_full();
+
+            elements.push(PipelineElement {
+                inp_pipe: Some(pipe),
+                expr,
+                redirection,
+            });
+        }
+
+        self.compiler.pipelines.push(Pipeline { elements });
+        let span_end = self.position();
+
+        self.create_node(
+            AstNode::Pipeline(PipelineId(self.compiler.blocks.len() - 1)),
+            span_start,
+            span_end,
+        )
+    }
+
     pub fn block(&mut self, context: BlockContext) -> NodeId {
         let _span = span!();
         let span_start = self.position();
@@ -1189,41 +1328,58 @@ impl Parser {
                 self.tokens.advance();
                 continue;
             } else if self.is_keyword(b"def") {
-                code_body.push(self.def_statement());
+                code_body.push(Sentence::Statement(self.def_statement()));
             } else if self.is_keyword(b"let") {
-                code_body.push(self.let_statement());
+                code_body.push(Sentence::Statement(self.let_statement())); // TODO: Allow `let x` be expression, make asignments statements and convert let+mut to assignment
             } else if self.is_keyword(b"mut") {
-                code_body.push(self.mut_statement());
+                code_body.push(Sentence::Statement(self.mut_statement()));
             } else if self.is_keyword(b"while") {
-                code_body.push(self.while_statement());
+                code_body.push(Sentence::Statement(self.while_statement()));
             } else if self.is_keyword(b"for") {
-                code_body.push(self.for_statement());
+                code_body.push(Sentence::Statement(self.for_statement()));
             } else if self.is_keyword(b"loop") {
-                code_body.push(self.loop_statement());
+                code_body.push(Sentence::Statement(self.loop_statement()));
             } else if self.is_keyword(b"return") {
-                code_body.push(self.return_statement());
+                code_body.push(Sentence::Statement(self.return_statement()));
             } else if self.is_keyword(b"continue") {
-                code_body.push(self.continue_statement());
+                code_body.push(Sentence::Statement(self.continue_statement()));
             } else if self.is_keyword(b"break") {
-                code_body.push(self.break_statement());
+                code_body.push(Sentence::Statement(self.break_statement()));
             } else if self.is_keyword(b"alias") {
-                code_body.push(self.alias_statement());
+                code_body.push(Sentence::Statement(self.alias_statement()));
             } else {
-                let exp_span_start = self.position();
-                let expression = self.expression_or_assignment();
-                let exp_span_end = self.get_span_end(expression);
+                let pipeline_span_start = self.position();
+                let pipeline = self.pipeline();
+                let pipeline_span_end = self.get_span_end(pipeline);
 
                 if self.is_semicolon() {
                     // This is a statement, not an expression
                     self.tokens.advance();
-                    code_body.push(self.create_node(
-                        AstNode::Statement(expression),
-                        exp_span_start,
-                        exp_span_end,
-                    ))
+                    let statement = self.create_node(
+                        AstNode::Statement(pipeline),
+                        pipeline_span_start,
+                        pipeline_span_end,
+                    );
+                    code_body.push(Sentence::Statement(statement));
                 } else {
-                    code_body.push(expression);
+                    code_body.push(Sentence::Pipeline(pipeline));
                 }
+
+                //             let exp_span_start = self.position();
+                //             let expression = self.expression_or_assignment();
+                //             let exp_span_end = self.get_span_end(expression);
+
+                //             if self.is_semicolon() {
+                //                 // This is a statement, not an expression
+                //                 self.tokens.advance();
+                //                 code_body.push(self.create_node(
+                //                     AstNode::Statement(expression),
+                //                     exp_span_start,
+                //                     exp_span_end,
+                //                 ))
+                //             } else {
+                //                 code_body.push(expression);
+                //             }
             }
         }
 
@@ -1236,6 +1392,74 @@ impl Parser {
             span_end,
         )
     }
+
+    // pub fn block(&mut self, context: BlockContext) -> NodeId {
+    //     let _span = span!();
+    //     let span_start = self.position();
+
+    //     let mut code_body = vec![];
+    //     if let BlockContext::Curlies = context {
+    //         self.lcurly();
+    //     }
+
+    //     while self.has_tokens() {
+    //         if self.is_rcurly() && context == BlockContext::Curlies {
+    //             self.rcurly();
+    //             break;
+    //         } else if self.is_rcurly() && context == BlockContext::Closure {
+    //             // not responsible for parsing it, yield back to the closure pass
+    //             break;
+    //         } else if self.is_semicolon() || self.is_newline() || self.is_comment() {
+    //             self.tokens.advance();
+    //             continue;
+    //         } else if self.is_keyword(b"def") {
+    //             code_body.push(self.def_statement());
+    //         } else if self.is_keyword(b"let") {
+    //             code_body.push(self.let_statement());
+    //         } else if self.is_keyword(b"mut") {
+    //             code_body.push(self.mut_statement());
+    //         } else if self.is_keyword(b"while") {
+    //             code_body.push(self.while_statement());
+    //         } else if self.is_keyword(b"for") {
+    //             code_body.push(self.for_statement());
+    //         } else if self.is_keyword(b"loop") {
+    //             code_body.push(self.loop_statement());
+    //         } else if self.is_keyword(b"return") {
+    //             code_body.push(self.return_statement());
+    //         } else if self.is_keyword(b"continue") {
+    //             code_body.push(self.continue_statement());
+    //         } else if self.is_keyword(b"break") {
+    //             code_body.push(self.break_statement());
+    //         } else if self.is_keyword(b"alias") {
+    //             code_body.push(self.alias_statement());
+    //         } else {
+    //             let exp_span_start = self.position();
+    //             let expression = self.expression_or_assignment();
+    //             let exp_span_end = self.get_span_end(expression);
+
+    //             if self.is_semicolon() {
+    //                 // This is a statement, not an expression
+    //                 self.tokens.advance();
+    //                 code_body.push(self.create_node(
+    //                     AstNode::Statement(expression),
+    //                     exp_span_start,
+    //                     exp_span_end,
+    //                 ))
+    //             } else {
+    //                 code_body.push(expression);
+    //             }
+    //         }
+    //     }
+
+    //     self.compiler.blocks.push(Block::new(code_body));
+    //     let span_end = self.position();
+
+    //     self.create_node(
+    //         AstNode::Block(BlockId(self.compiler.blocks.len() - 1)),
+    //         span_start,
+    //         span_end,
+    //     )
+    // }
 
     pub fn while_statement(&mut self) -> NodeId {
         let _span = span!();
@@ -1421,6 +1645,13 @@ impl Parser {
         self.tokens.peek_token() == Token::Pipe
     }
 
+    pub fn is_pipeline_connector(&mut self) -> bool {
+        self.is_pipe()
+            || self.tokens.peek_token() == Token::OutGreaterThanPipe
+            || self.tokens.peek_token() == Token::ErrGreaterThanPipe
+            || self.tokens.peek_token() == Token::OutErrGreaterThanPipe
+    }
+
     pub fn is_dollar(&mut self) -> bool {
         self.tokens.peek_token() == Token::Dollar
     }
@@ -1523,6 +1754,15 @@ impl Parser {
             || self.is_name()
     }
 
+    pub fn is_redirection(&mut self) -> bool {
+        self.tokens.peek_token() == Token::OutGreaterThan
+            || self.tokens.peek_token() == Token::OutGreaterGreaterThan
+            || self.tokens.peek_token() == Token::ErrGreaterThan
+            || self.tokens.peek_token() == Token::ErrGreaterGreaterThan
+            || self.tokens.peek_token() == Token::OutErrGreaterThan
+            || self.tokens.peek_token() == Token::OutErrGreaterGreaterThan
+    }
+
     pub fn error_on_node(&mut self, message: impl Into<String>, node_id: NodeId) {
         self.compiler.errors.push(SourceError {
             message: message.into(),
@@ -1604,12 +1844,44 @@ impl Parser {
         }
     }
 
-    pub fn pipe(&mut self) {
+    // TODO: refactor code such as the methods not returning anything will be skip_xxx() instead of xxx()
+    // pub fn skip_pipe(&mut self) {
+    //     if self.is_pipe() {
+    //         self.tokens.advance();
+    //     } else {
+    //         self.error("expected: pipe symbol '|'");
+    //     }
+    // }
+
+    pub fn pipe(&mut self) -> NodeId {
         if self.is_pipe() {
+            let start = self.position();
             self.tokens.advance();
+            let end = self.position();
+            self.create_node(AstNode::Pipe, start, end)
         } else {
-            self.error("expected: pipe symbol '|'");
+            self.error("expected: pipe symbol '|'")
         }
+    }
+
+    pub fn pipeline_connector(&mut self) -> NodeId {
+        let (token, span) = self.tokens.peek();
+        let node = match token {
+            Token::Pipe => AstNode::Pipe,
+            Token::ErrGreaterThanPipe => AstNode::RedirectErrToPipe,
+            Token::OutErrGreaterThanPipe => AstNode::RedirectOutErrToPipe,
+            Token::OutGreaterThanPipe => {
+                return self.error(
+                    "stdout pipeline redirection is redundant, use a normal pipe '|' instead",
+                );
+            }
+            _ => {
+                return self
+                    .error("expected: pipe symbol '|' or pipe redirection: 'e>|' or 'o+e>|'");
+            }
+        };
+
+        self.advance_node(node, span)
     }
 
     pub fn less_than(&mut self) {
