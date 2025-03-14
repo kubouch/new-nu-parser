@@ -13,6 +13,15 @@ pub enum RedirectionTarget {
     Pipe { expr: NodeId },
 }
 
+impl RedirectionTarget {
+    pub fn get_expr_id(&self) -> NodeId {
+        match self {
+            RedirectionTarget::File { expr, .. } => *expr,
+            RedirectionTarget::Pipe { expr } => *expr,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PipelineRedirection {
     Single {

@@ -1,6 +1,9 @@
+use nu_protocol::IntoSpanned;
+
 use crate::compiler::Compiler;
 use crate::errors::{Severity, SourceError};
 use crate::parser::{AstNode, NodeId};
+use crate::protocol::{PipelineRedirection, Sentence};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
@@ -147,7 +150,7 @@ impl<'a> Typechecker<'a> {
             result.push_str(&format!(
                 "{}: {}\n",
                 idx,
-                self.type_to_string(*node_type_id)
+                self.type_id_to_string(*node_type_id)
             ));
         }
 
@@ -266,19 +269,80 @@ impl<'a> Typechecker<'a> {
             AstNode::Block(block_id) => {
                 let block = &self.compiler.blocks[block_id.0];
 
-                for inner_node_id in &block.nodes {
-                    self.typecheck_node(*inner_node_id);
+                for sentence in &block.sentences {
+                    match sentence {
+                        Sentence::Pipeline(pipeline) => {
+                            self.typecheck_node(*pipeline);
+                        }
+                        Sentence::Statement(stmt) => {
+                            self.typecheck_node(*stmt);
+                        }
+                    }
                 }
+
+                // for inner_node_id in &block.nodes {
+                //     self.typecheck_node(*inner_node_id);
+                // }
 
                 // Block type is the type of the last statement, since blocks
                 // by themselves aren't supposed to be typed
-                let block_type = block
-                    .nodes
-                    .last()
-                    .map_or(NONE_TYPE, |node_id| self.type_id_of(*node_id));
+                let block_type =
+                    block
+                        .sentences
+                        .last()
+                        .map_or(NONE_TYPE, |sentence| match sentence {
+                            Sentence::Pipeline(pipeline) => self.type_id_of(*pipeline),
+                            Sentence::Statement(_) => NONE_TYPE,
+                        });
+
+                // let block_type = block
+                //     .nodes
+                //     .last()
+                //     .map_or(NONE_TYPE, |node_id| self.type_id_of(*node_id));
 
                 self.set_node_type_id(node_id, block_type);
             }
+            AstNode::Pipeline(pipeline_id) => {
+                let pipeline = &self.compiler.pipelines[pipeline_id.0];
+
+                let mut prev_type = Type::None;
+
+                for element in &pipeline.elements {
+                    // TODO: Set the expected $in type to prev_type before typechecking the node
+                    self.typecheck_node(element.expr);
+
+                    let expected_inp_type = self.inp_type_of(element.expr);
+
+                    if !is_type_compatible(prev_type, expected_inp_type) {
+                        self.error(
+                            format!(
+                                "Pipeline input type mismatch. Expected {} but pipeline input is {}",
+                                self.type_to_string(&expected_inp_type),
+                                self.type_to_string(&prev_type),
+                            ),
+                            element.expr,
+                        );
+                    }
+
+                    // TODO: Check if the redirection is compatible with the expr output type
+                    // (e.g., some redirections make sense only with external commands)
+
+                    if let Some(redirection) = element.redirection {
+                        match redirection {
+                            PipelineRedirection::Single { source: _, target } => {
+                                self.typecheck_node(target.get_expr_id());
+                            }
+                            PipelineRedirection::Separate { out, err } => {
+                                self.typecheck_node(out.get_expr_id());
+                                self.typecheck_node(err.get_expr_id());
+                            }
+                        }
+                    }
+
+                    prev_type = self.type_of(element.expr);
+                }
+            }
+            AstNode::Statement(expr_id) => self.typecheck_node(expr_id),
             AstNode::Closure { params, block } => {
                 // TODO: input/output types
                 if let Some(params_node_id) = params {
@@ -336,8 +400,8 @@ impl<'a> Typechecker<'a> {
                     self.error("The condition for if branch is not a boolean", condition);
                     self.set_node_type_id(node_id, ERROR_TYPE);
                 } else if types.len() > 1 {
-                    self.oneof_types.push(types);
-                    self.set_node_type(node_id, Type::OneOf(OneOfId(self.oneof_types.len() - 1)));
+                    let oneof_id = self.add_oneof_type(types);
+                    self.set_node_type(node_id, Type::OneOf(oneof_id));
                 } else {
                     self.set_node_type_id(node_id, *types.iter().next().expect("Can't be empty"));
                 }
@@ -888,9 +952,12 @@ impl<'a> Typechecker<'a> {
         }
     }
 
-    fn type_to_string(&self, type_id: TypeId) -> String {
+    fn type_id_to_string(&self, type_id: TypeId) -> String {
         let ty = &self.types[type_id.0];
+        self.type_to_string(ty)
+    }
 
+    fn type_to_string(&self, ty: &Type) -> String {
         match ty {
             Type::Unknown => "unknown".to_string(),
             Type::Forbidden => "forbidden".to_string(),
@@ -905,16 +972,16 @@ impl<'a> Typechecker<'a> {
             Type::String => "string".to_string(),
             Type::Closure => "closure".to_string(),
             Type::List(subtype_id) => {
-                format!("list<{}>", self.type_to_string(*subtype_id))
+                format!("list<{}>", self.type_id_to_string(*subtype_id))
             }
             Type::Stream(subtype_id) => {
-                format!("stream<{}>", self.type_to_string(*subtype_id))
+                format!("stream<{}>", self.type_id_to_string(*subtype_id))
             }
             Type::OneOf(id) => {
                 let mut fmt = "oneof<".to_string();
                 let mut types: Vec<_> = self.oneof_types[id.0]
                     .iter()
-                    .map(|ty| self.type_to_string(*ty) + ", ")
+                    .map(|ty| self.type_id_to_string(*ty) + ", ")
                     .collect();
                 types.sort();
                 for ty in &types {
@@ -931,6 +998,24 @@ impl<'a> Typechecker<'a> {
         }
     }
 
+    /// Determine the expected input type of a node.
+    fn inp_type_of(&mut self, node_id: NodeId) -> Type {
+        match &self.compiler.ast_nodes[node_id.0] {
+            AstNode::Call { .. } => {
+                if let Some(decl_id) = self.compiler.decl_resolution.get(&node_id) {
+                    let inp_types = self.decl_types[decl_id.0]
+                        .iter()
+                        .map(|inout_type| inout_type.in_type)
+                        .collect::<HashSet<_>>();
+                    Type::OneOf(self.add_oneof_type(inp_types))
+                } else {
+                    Type::Stream(BINARY_TYPE)
+                }
+            }
+            _ => Type::Any,
+        }
+    }
+
     fn error(&mut self, msg: impl Into<String>, node_id: NodeId) {
         self.errors.push(SourceError {
             message: msg.into(),
@@ -944,8 +1029,8 @@ impl<'a> Typechecker<'a> {
             format!(
                 "type mismatch: unsupported {} between {} and {}",
                 op_msg,
-                self.type_to_string(self.type_id_of(lhs)),
-                self.type_to_string(self.type_id_of(rhs)),
+                self.type_id_to_string(self.type_id_of(lhs)),
+                self.type_id_to_string(self.type_id_of(rhs)),
             ),
             op,
         );
@@ -957,6 +1042,15 @@ impl<'a> Typechecker<'a> {
             types.extend(self.oneof_types[id.0].clone());
         } else {
             types.insert(*ty);
+        }
+    }
+
+    fn add_oneof_type(&mut self, types: HashSet<TypeId>) -> OneOfId {
+        if let Some(id) = self.oneof_types.iter().position(|t| t == &types) {
+            OneOfId(id)
+        } else {
+            self.oneof_types.push(types);
+            OneOfId(self.oneof_types.len() - 1)
         }
     }
 }

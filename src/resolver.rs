@@ -1,4 +1,4 @@
-use crate::protocol::{Command, Declaration, Sentence};
+use crate::protocol::{Command, Declaration, PipelineRedirection, Sentence};
 use crate::{
     compiler::Compiler,
     errors::{Severity, SourceError},
@@ -349,6 +349,26 @@ impl<'a> Resolver<'a> {
                 for (arm_lhs, arm_rhs) in match_arms {
                     self.resolve_node(*arm_lhs);
                     self.resolve_node(*arm_rhs);
+                }
+            }
+            AstNode::Pipeline(pipeline_id) => {
+                let pipeline = &self.compiler.pipelines[pipeline_id.0];
+
+                for element in &pipeline.elements {
+                    // TODO: Add $in
+                    self.resolve_node(element.expr);
+
+                    if let Some(redirection) = element.redirection {
+                        match redirection {
+                            PipelineRedirection::Single { source: _, target } => {
+                                self.resolve_node(target.get_expr_id());
+                            }
+                            PipelineRedirection::Separate { out, err } => {
+                                self.resolve_node(out.get_expr_id());
+                                self.resolve_node(err.get_expr_id());
+                            }
+                        }
+                    }
                 }
             }
             AstNode::Statement(node) => self.resolve_node(node),

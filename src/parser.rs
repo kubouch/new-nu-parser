@@ -560,7 +560,7 @@ impl Parser {
         let span_start = self.position();
 
         while self.has_tokens() {
-            if self.is_newline() {
+            if self.is_newline() | self.is_pipeline_connector() {
                 break;
             }
 
@@ -1302,7 +1302,7 @@ impl Parser {
         let span_end = self.position();
 
         self.create_node(
-            AstNode::Pipeline(PipelineId(self.compiler.blocks.len() - 1)),
+            AstNode::Pipeline(PipelineId(self.compiler.pipelines.len() - 1)),
             span_start,
             span_end,
         )
